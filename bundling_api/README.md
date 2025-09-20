@@ -28,6 +28,8 @@ Features (MVP):
 
 4) Start the API:
    uvicorn app.main:app --reload
+   or
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 API will be at http://localhost:8000
 
