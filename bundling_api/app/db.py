@@ -5,6 +5,8 @@ from .config import settings
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
+    pool_recycle=300,
+    connect_args={"connect_timeout": settings.db_connect_timeout},
     future=True,
 )
 

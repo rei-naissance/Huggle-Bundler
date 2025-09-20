@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     app_debug: bool = Field(default=True, alias="APP_DEBUG")
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
 
+    # DB tuning
+    db_connect_timeout: int = Field(default=10, alias="DB_CONNECT_TIMEOUT")
+
     # AI settings
     ai_provider: str | None = Field(default=None, alias="AI_PROVIDER")  # "openrouter" or "groq"
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
