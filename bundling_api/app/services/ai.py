@@ -72,7 +72,7 @@ def _openrouter_generate(name_hint: str, product_names: list[str], stock: int) -
         "temperature": 0.7,
     }
     try:
-        resp = httpx.post(url, headers=headers, json=data, timeout=30)
+        resp = httpx.post(url, headers=headers, json=data, timeout=httpx.Timeout(10.0))
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         payload = _extract_json_object(content)
@@ -119,7 +119,7 @@ def _groq_generate(name_hint: str, product_names: list[str], stock: int) -> Tupl
         "temperature": 0.7,
     }
     try:
-        resp = httpx.post(url, headers=headers, json=data, timeout=30)
+        resp = httpx.post(url, headers=headers, json=data, timeout=httpx.Timeout(10.0))
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         payload = _extract_json_object(content)
@@ -136,13 +136,25 @@ def _groq_generate(name_hint: str, product_names: list[str], stock: int) -> Tupl
 
 def maybe_enhance_bundle_text(name_hint: str, product_names: list[str], stock: int) -> Tuple[str, str] | None:
     """
-    Try to get an AI-improved (name, description). Return None if AI is not configured or fails.
+    Try to get an AI-improved (name, description) with prioritized providers:
+    1) Groq (fast path)
+    2) OpenRouter (fallback)
+    Returns None if both fail/misconfigured.
+    If AI_PROVIDER is explicitly set, use that order first, then the other provider as fallback.
     """
     provider = (settings.ai_provider or "").lower().strip()
+    order = ["groq", "openrouter"]
     if provider == "openrouter":
-        return _openrouter_generate(name_hint, product_names, stock)
-    if provider == "groq":
-        return _groq_generate(name_hint, product_names, stock)
+        order = ["openrouter", "groq"]
+    for p in order:
+        if p == "groq":
+            res = _groq_generate(name_hint, product_names, stock)
+            if res:
+                return res
+        elif p == "openrouter":
+            res = _openrouter_generate(name_hint, product_names, stock)
+            if res:
+                return res
     return None
 
 
@@ -194,7 +206,7 @@ def _openrouter_generate_bundles(catalog_lines: list[str], num_bundles: int) -> 
         "temperature": 0.6,
     }
     try:
-        resp = httpx.post(url, headers=headers, json=data, timeout=60)
+        resp = httpx.post(url, headers=headers, json=data, timeout=httpx.Timeout(12.0))
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         payload = _extract_json_object(content) or {}
@@ -235,7 +247,7 @@ def _groq_generate_bundles(catalog_lines: list[str], num_bundles: int) -> list[d
         "temperature": 0.6,
     }
     try:
-        resp = httpx.post(url, headers=headers, json=data, timeout=60)
+        resp = httpx.post(url, headers=headers, json=data, timeout=httpx.Timeout(12.0))
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         payload = _extract_json_object(content) or {}
@@ -263,13 +275,19 @@ def generate_bundles_from_inventory(db, seller_id: str, num_bundles: int = 3) ->
 
     catalog_lines = _format_product_catalog(products_raw)
     provider = (settings.ai_provider or "").lower().strip()
-    bundles_def: list[dict] | None = None
+    # Prioritized provider order: Groq -> OpenRouter (unless explicitly set otherwise)
+    order = ["groq", "openrouter"]
     if provider == "openrouter":
-        bundles_def = _openrouter_generate_bundles(catalog_lines, num_bundles)
-    elif provider == "groq":
-        bundles_def = _groq_generate_bundles(catalog_lines, num_bundles)
-    else:
-        return []
+        order = ["openrouter", "groq"]
+
+    bundles_def: list[dict] | None = None
+    for p in order:
+        if p == "groq":
+            bundles_def = _groq_generate_bundles(catalog_lines, num_bundles)
+        elif p == "openrouter":
+            bundles_def = _openrouter_generate_bundles(catalog_lines, num_bundles)
+        if bundles_def:
+            break
 
     if not bundles_def:
         bundles_def = []
