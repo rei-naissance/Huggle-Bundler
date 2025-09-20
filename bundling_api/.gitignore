@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+
+# Env
+.env
+.venv/
+
+# Build
+build/
+dist/
+
+# Alembic cache
+migrations/versions/__pycache__/

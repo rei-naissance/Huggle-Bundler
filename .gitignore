@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.venv/
+venv/
+pyvenv.cfg
+
+# Distribution / packaging
+*.egg-info/
+build/
+dist/
+
+# VSCode
+.vscode/
+
+# Node
+node_modules/
+package-lock.json
+
+# Logs
+*.log
+
+# OS
+.DS_Store
