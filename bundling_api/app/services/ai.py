@@ -7,9 +7,10 @@ import httpx
 from ..config import settings
 from ..utils.dates import parse_expiry as _safe_parse_dt
 from ..schemas.bundle import ProductIn, BundleCreate
-from ..clients.inventory import fetch_products_for_store, get_store_id_for_seller
+from ..clients.inventory import fetch_products_for_store
 from datetime import datetime, timezone
 from ..utils.text import parse_tags_str as __parse_tags
+from ..repositories.bundles import bundle_exists_for_products
 
 
 def _extract_json_object(text: str) -> dict | None:
@@ -259,11 +260,24 @@ def _groq_generate_bundles(catalog_lines: list[str], num_bundles: int) -> list[d
     return None
 
 
-def generate_bundles_from_inventory(db, seller_id: str, num_bundles: int = 3) -> list[BundleCreate]:
-    store_id = get_store_id_for_seller(db, seller_id)
+def generate_bundles_for_store(db, store_id: str, num_bundles: int = 3) -> list[BundleCreate]:
     if not store_id:
         return []
     products_raw = fetch_products_for_store(db, store_id)
+
+    def extract_product_ids(products) -> list[str]:
+        """Extract product IDs from various product representations."""
+        if isinstance(products, list):
+            ids = []
+            for item in products:
+                if isinstance(item, ProductIn):
+                    ids.append(item.id)
+                elif isinstance(item, dict) and "id" in item:
+                    ids.append(str(item["id"]))
+                elif isinstance(item, str):
+                    ids.append(item)
+            return ids
+        return []
     # Sort by earliest expiry and limit catalog size to keep prompt manageable
     now = datetime.now(timezone.utc)
     def expiry_key(p):
@@ -329,104 +343,65 @@ def generate_bundles_from_inventory(db, seller_id: str, num_bundles: int = 3) ->
         if len(chosen_products) < 2:
             continue
         stock = min([p.stock for p in chosen_products]) if chosen_products else 0
-        results.append(BundleCreate(
-            seller_id=seller_id,
+        candidate = BundleCreate(
             store_id=store_id,
             name=name,
             description=desc,
             products=chosen_products,
             images=[],
             stock=stock,
-        ))
+        )
+        # Check if bundle with these products already exists
+        product_ids = extract_product_ids(candidate.products)
+        if not bundle_exists_for_products(db, store_id, product_ids):
+            results.append(candidate)
         if len(results) >= num_bundles:
             break
 
-    if results:
-        return results
-
-    # Fallback: simple rule-based grouping if AI returned nothing
-    # Group by productType (fallback to first tag or Misc), prioritize soonest expiry
-    from collections import defaultdict
-    buckets: dict[str, list[dict]] = defaultdict(list)
-    for p in products_raw:
-        if int(p.get("stock") or 0) <= 0:
-            continue
-        group = (p.get("productType") or "").strip() or (str(p.get("tags") or "").split(",")[0].strip() if p.get("tags") else "Misc")
-        buckets[group].append(p)
-
-    def prod_key(pr):
-        d = _safe_parse_dt(pr.get("expiresOn"))
-        if d is None or (isinstance(d, datetime) and d.year < 1900):
-            return datetime(9999, 1, 1, tzinfo=timezone.utc)
-        return d
-
-    for g in list(buckets.keys()):
-        buckets[g] = sorted(buckets[g], key=prod_key)
-
-    ranked = sorted(buckets.items(), key=lambda kv: prod_key(kv[1][0]) if kv[1] else datetime(9999, 1, 1, tzinfo=timezone.utc))
-    fallback: list[BundleCreate] = []
-    for group_name, items in ranked:
-        chosen_raw = items[:3] if len(items) >= 3 else items[:2] if len(items) >= 2 else []
-        if len(chosen_raw) < 2:
-            continue
-        chosen: list[ProductIn] = []
-        for pr in chosen_raw:
-            exp = _safe_parse_dt(pr.get("expiresOn"))
-            if exp is None or (isinstance(exp, datetime) and exp.year < 1900):
-                exp = datetime(9999, 1, 1, tzinfo=timezone.utc)
-            chosen.append(ProductIn(
-                id=str(pr.get("id")),
-                name=pr.get("name") or "Unnamed",
-                product_type=pr.get("productType") or None,
-                expires_on=exp,
-                stock=int(pr.get("stock") or 0),
-                tags=[t.strip() for t in (pr.get("tags") or "").split(",") if t.strip()],
-            ))
-        if len(chosen) < 2:
-            continue
-        stock = min([p.stock for p in chosen]) if chosen else 0
-        fallback.append(BundleCreate(
-            seller_id=seller_id,
-            store_id=store_id,
-            name=f"{group_name} Essentials Pack",
-            description=f"Includes {', '.join([c.name for c in chosen])}.",
-            products=chosen,
-            images=[],
-            stock=stock,
-        ))
-        if len(fallback) >= num_bundles:
-            break
-
-    if fallback:
-        return fallback
-
-    # Last-resort fallback: pick 2 earliest-expiring in-stock products regardless of group
-    pool = [p for p in products_raw if int(p.get("stock") or 0) > 0]
-    pool_sorted = sorted(pool, key=lambda pr: (_safe_parse_dt(pr.get("expiresOn")) or datetime(9999,1,1,tzinfo=timezone.utc)))
-    if len(pool_sorted) >= 2:
-        pr1, pr2 = pool_sorted[0], pool_sorted[1]
-        def to_product_in(pr):
-            exp = _safe_parse_dt(pr.get("expiresOn"))
-            if exp is None or (isinstance(exp, datetime) and exp.year < 1900):
-                exp = datetime(9999, 1, 1, tzinfo=timezone.utc)
-            return ProductIn(
-                id=str(pr.get("id")),
-                name=pr.get("name") or "Unnamed",
-                product_type=pr.get("productType") or None,
-                expires_on=exp,
-                stock=int(pr.get("stock") or 0),
-                tags=__parse_tags(pr.get("tags")),
+    # Top-up to reach exactly num_bundles with last-resort pairs
+    if len(results) < num_bundles:
+        # Flatten pool by earliest expiry
+        pool_sorted = sorted(products_raw, key=expiry_key)
+        i = 0
+        while len(results) < num_bundles and i + 1 < len(pool_sorted):
+            pr1, pr2 = pool_sorted[i], pool_sorted[i+1]
+            # skip zero stock
+            if int(pr1.get("stock") or 0) <= 0:
+                i += 1
+                continue
+            if int(pr2.get("stock") or 0) <= 0:
+                i += 2
+                continue
+            # Check if bundle with these products already exists
+            product_ids = [str(pr1.get("id")), str(pr2.get("id"))]
+            if bundle_exists_for_products(db, store_id, product_ids):
+                i += 2
+                continue
+            def to_product_in(pr):
+                exp = _safe_parse_dt(pr.get("expiresOn"))
+                if exp is None or (isinstance(exp, datetime) and exp.year < 1900):
+                    exp = datetime(9999, 1, 1, tzinfo=timezone.utc)
+                return ProductIn(
+                    id=str(pr.get("id")),
+                    name=pr.get("name") or "Unnamed",
+                    product_type=pr.get("productType") or None,
+                    expires_on=exp,
+                    stock=int(pr.get("stock") or 0),
+                    tags=__parse_tags(pr.get("tags")),
+                )
+            chosen = [to_product_in(pr1), to_product_in(pr2)]
+            stock = min([p.stock for p in chosen])
+            candidate = BundleCreate(
+                store_id=store_id,
+                name="Quick Pair Pack",
+                description=f"Includes {chosen[0].name} and {chosen[1].name}.",
+                products=chosen,
+                images=[],
+                stock=stock,
             )
-        chosen = [to_product_in(pr1), to_product_in(pr2)]
-        stock = min([p.stock for p in chosen])
-        return [BundleCreate(
-            seller_id=seller_id,
-            store_id=store_id,
-            name="Last Chance Mix Pack",
-            description=f"Includes {chosen[0].name} and {chosen[1].name}.",
-            products=chosen,
-            images=[],
-            stock=stock,
-        )]
+            product_ids = extract_product_ids(candidate.products)
+            if not bundle_exists_for_products(db, store_id, product_ids):
+                results.append(candidate)
+            i += 2
 
-    return []
+    return results

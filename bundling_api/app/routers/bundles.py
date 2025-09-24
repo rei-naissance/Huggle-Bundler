@@ -4,32 +4,30 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db, engine
 from ..schemas.bundle import BundleOut, BundleCreate, RecommendRequest, AIRecommendRequest
-from ..repositories.bundles import create_bundle, get_bundle, list_bundles_by_seller
+from ..repositories.bundles import create_bundle, get_bundle, list_bundles_by_store
 from ..services.recommender import recommend_bundles
-from ..services.ai import generate_bundles_from_inventory
-from ..clients.inventory import ensure_store_id_for_bundle
+from ..services.ai import generate_bundles_for_store
 
 router = APIRouter()
 
 
 @router.post("/recommend", response_model=List[BundleCreate])
 def recommend(req: RecommendRequest, db: Session = Depends(get_db)):
-    bundles = recommend_bundles(db, seller_id=req.seller_id, num_bundles=req.num_bundles)
+    bundles = recommend_bundles(db, store_id=req.store_id, num_bundles=req.num_bundles)
     return bundles
 
 
 @router.post("/recommend/ai", response_model=List[BundleCreate])
 def recommend_ai(req: AIRecommendRequest, db: Session = Depends(get_db)):
-    bundles = generate_bundles_from_inventory(db, seller_id=req.seller_id, num_bundles=req.num_bundles)
+    bundles = generate_bundles_for_store(db, store_id=req.store_id, num_bundles=req.num_bundles)
     return bundles
 
 
 @router.post("/recommend/ai/save", response_model=List[BundleOut])
 def recommend_ai_and_save(req: AIRecommendRequest, db: Session = Depends(get_db)):
-    candidates = generate_bundles_from_inventory(db, seller_id=req.seller_id, num_bundles=req.num_bundles)
+    candidates = generate_bundles_for_store(db, store_id=req.store_id, num_bundles=req.num_bundles)
     saved_out: list[BundleOut] = []
     for c in candidates:
-        c = ensure_store_id_for_bundle(db, c)
         saved = create_bundle(db, c)
         saved_out.append(
             BundleOut(
@@ -47,8 +45,6 @@ def recommend_ai_and_save(req: AIRecommendRequest, db: Session = Depends(get_db)
 
 @router.post("/save", response_model=BundleOut)
 def save_bundle(bundle: BundleCreate, db: Session = Depends(get_db)):
-    # Ensure store_id if not provided
-    bundle = ensure_store_id_for_bundle(db, bundle)
     saved = create_bundle(db, bundle)
     # Return as BundleOut
     return BundleOut(
@@ -79,8 +75,8 @@ def get_bundle_by_id(bundle_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=List[BundleOut])
-def list_bundles(seller_id: str = Query(...), limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    items = list_bundles_by_seller(db, seller_id=seller_id, limit=limit, offset=offset)
+def list_bundles(store_id: str = Query(...), limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
+    items = list_bundles_by_store(db, store_id=store_id, limit=limit, offset=offset)
     return [
         BundleOut(
             id=b.id,

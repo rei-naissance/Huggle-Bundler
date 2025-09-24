@@ -21,8 +21,7 @@ class BundleBase(BaseModel):
 
 
 class BundleCreate(BundleBase):
-    seller_id: str
-    store_id: Optional[str] = None
+    store_id: str
 
 
 class BundleOut(BundleBase):
@@ -34,10 +33,10 @@ class BundleOut(BundleBase):
 
 
 class RecommendRequest(BaseModel):
-    seller_id: str
+    store_id: str
     num_bundles: int = 3
 
 
 class AIRecommendRequest(BaseModel):
-    seller_id: str
+    store_id: str
     num_bundles: int = 3
