@@ -17,6 +17,7 @@ class BundleBase(BaseModel):
     description: Optional[str] = None
     products: List[ProductIn]
     images: List[str] = []
+    image_url: Optional[str] = None
     stock: int = 0
 
 

@@ -27,6 +27,7 @@ class Bundle(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     products: Mapped[dict] = mapped_column(JSONB, nullable=False)  # list of product dicts
     images: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)  # Main AI-generated image
 
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

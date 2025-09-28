@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .routers.bundles import router as bundles_router
+from .routers.images import router as images_router
 
 app = FastAPI(title="Bundling API", version="0.1.0")
 
@@ -22,3 +23,4 @@ def health():
 
 # Routers
 app.include_router(bundles_router, prefix="/bundles", tags=["bundles"])
+app.include_router(images_router, prefix="/images", tags=["images"])

@@ -1,0 +1,23 @@
+# Requirements for Async Image Generation Server
+# Install with: pip3 install -r requirements_async_images.txt
+
+# Core dependencies
+fastapi>=0.104.0
+uvicorn>=0.24.0
+httpx>=0.25.0
+pydantic>=2.4.0
+
+# Image generation (CPU version - lighter)
+torch>=2.0.0,<2.1.0 --index-url https://download.pytorch.org/whl/cpu
+diffusers>=0.21.0
+transformers>=4.35.0
+accelerate>=0.24.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Optional but recommended for better performance
+# xformers  # Uncomment if you want memory optimizations (requires compilation)
+
+# Development/testing
+httpx  # For testing HTTP requests
