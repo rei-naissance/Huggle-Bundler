@@ -16,3 +16,13 @@ dist/
 
 # Alembic cache
 migrations/versions/__pycache__/
+
+# Environment files with real secrets
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# Keep only .env.example (with placeholder values)
+!.env.example
