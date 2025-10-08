@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
     groq_model: str | None = Field(default=None, alias="GROQ_MODEL")
     
-    # Local Image Generation settings
-    local_image_api_url: str = Field(default="http://localhost:8001", alias="LOCAL_IMAGE_API_URL")
+    # Local Image Generation settings (via cloudflared tunnel)
+    local_image_api_url: str = Field(default="https://image.huggle.tech", alias="LOCAL_IMAGE_API_URL")
     image_generation_timeout: int = Field(default=180, alias="IMAGE_GENERATION_TIMEOUT")
 
 

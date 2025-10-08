@@ -195,51 +195,32 @@ def truncate_prompt_for_clip(prompt: str, max_tokens: int = 73) -> str:
 
 def build_bundle_prompt(bundle_name: str, products: List[ProductIn], description: Optional[str] = None) -> str:
     """
-    Build an optimized prompt for local diffusers image generation based on bundle data.
-    Automatically truncates to fit CLIP's 77 token limit.
+    Build a simple, focused prompt for accurate bundle image generation.
+    Uses only product names and essential styling for better results.
     
     Args:
         bundle_name: Name of the bundle
         products: List of products in the bundle
-        description: Optional bundle description
+        description: Optional bundle description (ignored for simplicity)
         
     Returns:
-        Optimized prompt string for image generation (truncated to fit CLIP limits)
+        Clean, focused prompt string for image generation
     """
-    # Get product names and categories (but limit them)
-    product_names = [p.name for p in products[:3]]  # Limit to 3 products for brevity
-    product_types = list(set([p.product_type for p in products[:3] if p.product_type]))[:2]  # Max 2 categories
+    # Get just the core product names (limit to 4 for clarity)
+    product_names = [p.name.strip() for p in products[:4] if p.name and p.name.strip()]
     
-    # Build core prompt with essential information
+    if not product_names:
+        # Fallback if no valid product names
+        product_names = ["products"]
+    
+    # Create simple, direct prompt focusing on the actual products
     products_text = ", ".join(product_names)
     
-    # Start with the most important elements
-    essential_parts = [
-        f"Professional product photography of {bundle_name} bundle with {products_text}"
-    ]
+    # Simple, clean prompt that focuses on the products themselves
+    prompt = f"{products_text}, product photography, white background, professional lighting, high quality"
     
-    # Add categories if available and space permits
-    if product_types:
-        categories_text = ", ".join(product_types)
-        essential_parts.append(f"Categories: {categories_text}")
-    
-    # Add description if available and short
-    if description and len(description.split()) <= 10:  # Only if description is short
-        essential_parts.append(description)
-    
-    # Add essential style keywords (prioritize most important)
-    style_keywords = [
-        "clean white background",
-        "professional lighting", 
-        "high quality",
-        "commercial photography"
-    ]
-    
-    # Build the full prompt
-    full_prompt = " ".join(essential_parts) + ", " + ", ".join(style_keywords) + "."
-    
-    # Truncate to fit CLIP's token limit
-    return truncate_prompt_for_clip(full_prompt)
+    # Keep it under token limit (should be well under 77 tokens now)
+    return truncate_prompt_for_clip(prompt, max_tokens=50)  # Even more conservative limit
 
 
 async def generate_bundle_image(bundle_name: str, products: List[ProductIn], description: Optional[str] = None) -> str:
@@ -343,7 +324,7 @@ def generate_images_for_bundles(bundles: List[Bundle], max_concurrent: int = 3) 
             )
             
             # Upload to R2 if we got a local URL
-            if image_url and image_url.startswith("http://localhost:8001/images/"):
+            if image_url and (image_url.startswith("http://localhost:8001/images/") or image_url.startswith("https://image.huggle.tech/images/")):
                 try:
                     from .r2_image_upload import upload_bundle_image
                     r2_url = upload_bundle_image(image_url, bundle.id)

@@ -192,7 +192,7 @@ async def generate_image_async(job_id: str, request: ImageGenerationRequest):
         image_path = OUTPUT_DIR / image_filename
         image.save(image_path, format="PNG", optimize=True, quality=95)
         
-        image_url = f"http://localhost:8001/images/{image_filename}"
+        image_url = f"https://image.huggle.tech/images/{image_filename}"
         
         # Update job status
         active_jobs[job_id].update({
@@ -355,7 +355,7 @@ async def generate_image_sync(request: ImageGenerationRequest):
         image_path = OUTPUT_DIR / image_filename
         image.save(image_path, format="PNG", optimize=True, quality=95)
         
-        image_url = f"http://localhost:8001/images/{image_filename}"
+        image_url = f"https://image.huggle.tech/images/{image_filename}"
         
         # Clear CUDA cache
         if DEVICE == "cuda":
@@ -437,7 +437,8 @@ if __name__ == "__main__":
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name()}")
         print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
-    print("Server will be available at: http://localhost:8001")
+    print(f"Server will be available at: http://localhost:8081")
+    print(f"Public URL via cloudflared: https://image.huggle.tech")
     print("Features:")
     print("  • Async generation with job queue")
     print("  • GPU-optimized SD 1.5 model")
@@ -450,7 +451,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "local_image_server_gpu_optimized:app",
         host="0.0.0.0",
-        port=8001,
+        port=8081,
         reload=False,
         log_level="info"
     )
