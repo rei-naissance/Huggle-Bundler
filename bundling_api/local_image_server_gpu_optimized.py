@@ -28,12 +28,11 @@ logger = logging.getLogger(__name__)
 
 # Configuration - Optimized for RTX 3050 6GB
 
-# Other models to try:
-# stabilityai/stable-diffusion-2-1-base
-# runwayml/stable-diffusion-v1-5
-# gsdf/Counterfeit-V2.5
+# Realistic Vision V2.0: Lightweight, high-quality SD 1.5 variant
+# Perfect for RTX 3050 6GB - uses only ~3-4GB VRAM, excellent quality
+# Much faster than SDXL, great for realistic images
 
-MODEL_NAME = "runwayml/stable-diffusion-v1-5"  # Smaller SD 1.5 model (~4GB)
+MODEL_NAME = "SG161222/Realistic_Vision_V2.0"  # Lightweight optimized model
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OUTPUT_DIR = Path("generated_images")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -48,10 +47,10 @@ active_jobs: Dict[str, Dict] = {}
 
 class ImageGenerationRequest(BaseModel):
     prompt: str
-    negative_prompt: Optional[str] = "blurry, low quality, distorted"
-    num_inference_steps: int = 15  # Good balance of speed vs quality
-    guidance_scale: float = 7.5
-    width: int = 512  # Standard size for SD 1.5
+    negative_prompt: Optional[str] = "blurry, low quality, distorted, ugly"
+    num_inference_steps: int = 20  # Good balance for Realistic Vision
+    guidance_scale: float = 7.5  # Standard SD guidance
+    width: int = 512  # Standard resolution
     height: int = 512
     seed: Optional[int] = None
 
@@ -71,10 +70,10 @@ class QuickImageResponse(BaseModel):
 
 
 async def load_model():
-    """Load the optimized SD 1.5 model for RTX 3050"""
+    """Load Realistic Vision V2.0 optimized for RTX 3050 6GB"""
     global pipeline
     
-    logger.info(f"Loading SD 1.5 model on {DEVICE}...")
+    logger.info(f"Loading Realistic Vision V2.0 model on {DEVICE}...")
     logger.info(f"GPU: {torch.cuda.get_device_name() if torch.cuda.is_available() else 'CPU only'}")
     
     if torch.cuda.is_available():
@@ -83,60 +82,64 @@ async def load_model():
     start_time = time.time()
     
     try:
-        # Load SD 1.5 with optimizations for RTX 3050
+        # Load Realistic Vision V2.0 - lightweight SD 1.5 variant
+        # Perfect for 6GB VRAM cards
         pipeline = StableDiffusionPipeline.from_pretrained(
             MODEL_NAME,
             torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
             safety_checker=None,  # Disable to save VRAM
-            requires_safety_checker=False
+            requires_safety_checker=False,
+            low_cpu_mem_usage=True
         )
         
-        # Use Euler scheduler for better quality/speed balance
+        # Use Euler Ancestral scheduler for better quality
         pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(pipeline.scheduler.config)
         
+        # Move to device and apply optimizations
         pipeline = pipeline.to(DEVICE)
         
-        # GPU optimizations for RTX 3050
+        # Apply VRAM optimizations for RTX 3050 6GB
         if DEVICE == "cuda":
-            # Enable memory efficient attention (saves ~20% VRAM)
-            pipeline.enable_attention_slicing()
-            
-            # Enable CPU offloading for VAE (saves VRAM)
-            pipeline.enable_sequential_cpu_offload()
-            
-            # Enable CUDA memory efficient attention if available
+            # Enable attention slicing (saves ~1GB VRAM)
             try:
-                pipeline.enable_memory_efficient_attention()
-                logger.info("✅ Memory efficient attention enabled")
-            except:
-                logger.info("⚠️ Memory efficient attention not available")
+                pipeline.enable_attention_slicing()
+                logger.info("✅ Attention slicing enabled")
+            except Exception as e:
+                logger.info(f"⚠️ Attention slicing not available: {e}")
             
-            # Try to use flash attention for speed (newer GPUs)
+            # Enable VAE slicing for memory efficiency
             try:
-                from diffusers.utils import is_xformers_available
-                if is_xformers_available():
-                    pipeline.enable_xformers_memory_efficient_attention()
-                    logger.info("✅ XFormers memory efficient attention enabled")
-            except:
-                logger.info("⚠️ XFormers not available")
+                pipeline.enable_vae_slicing()
+                logger.info("✅ VAE slicing enabled")
+            except Exception as e:
+                logger.info(f"⚠️ VAE slicing not available: {e}")
+            
+            # Enable memory efficient attention if available
+            try:
+                pipeline.enable_xformers_memory_efficient_attention()
+                logger.info("✅ XFormers memory efficient attention enabled")
+            except Exception as e:
+                logger.info(f"⚠️ XFormers not available: {e}")
+            
+            logger.info("✅ Realistic Vision GPU optimizations applied")
         
         load_time = time.time() - start_time
         logger.info(f"Model loaded successfully in {load_time:.2f} seconds")
         
         # Quick warmup to allocate VRAM
-        logger.info("Warming up model...")
+        logger.info("Warming up Realistic Vision model...")
         warmup_start = time.time()
         with torch.no_grad():
             _ = pipeline(
                 "test", 
-                num_inference_steps=1, 
-                guidance_scale=1.0,
-                width=256, 
+                num_inference_steps=5,  # Quick warmup
+                guidance_scale=7.5,
+                width=256,  # Smaller for warmup
                 height=256,
                 output_type="pil"
             ).images[0]
         warmup_time = time.time() - warmup_start
-        logger.info(f"Model warmed up in {warmup_time:.2f} seconds")
+        logger.info(f"Realistic Vision warmed up in {warmup_time:.2f} seconds")
         
         if DEVICE == "cuda":
             # Report VRAM usage after loading
@@ -322,8 +325,8 @@ async def generate_image_sync(request: ImageGenerationRequest):
         logger.info(f"Quick GPU generation: {request.prompt[:50]}...")
         start_time = time.time()
         
-        # Use faster settings for sync generation
-        fast_steps = min(request.num_inference_steps, 10)  # Cap at 10 steps for speed
+        # Fast settings for sync generation
+        fast_steps = min(request.num_inference_steps, 15)  # Cap for speed
         
         # Set seed
         generator = None
@@ -432,7 +435,7 @@ if __name__ == "__main__":
     
     print("🚀 Starting GPU-Optimized Async Image Generation Server")
     print("=" * 60)
-    print(f"Model: {MODEL_NAME} (SD 1.5 - optimized for RTX 3050)")
+    print(f"Model: {MODEL_NAME} (Realistic Vision V2.0 - RTX 3050)")
     print(f"Device: {DEVICE}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name()}")
@@ -441,7 +444,7 @@ if __name__ == "__main__":
     print(f"Public URL via cloudflared: https://image.huggle.tech")
     print("Features:")
     print("  • Async generation with job queue")
-    print("  • GPU-optimized SD 1.5 model")
+    print("  • Realistic Vision V2.0: High-quality lightweight SD 1.5")
     print("  • Memory efficient attention")
     print("  • CPU offloading for VRAM savings")
     print("  • Automatic CUDA cache clearing")

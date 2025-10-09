@@ -193,34 +193,238 @@ def truncate_prompt_for_clip(prompt: str, max_tokens: int = 73) -> str:
     return result
 
 
+def get_product_category_keywords(products: List[ProductIn]) -> Dict[str, Any]:
+    """
+    Analyze products and return category-specific keywords and styling.
+    
+    Args:
+        products: List of products to analyze
+        
+    Returns:
+        Dictionary with category info, styling keywords, and composition hints
+    """
+    # Extract product types and tags
+    categories = set()
+    all_tags = set()
+    
+    for product in products:
+        if product.product_type:
+            categories.add(product.product_type.lower())
+        if product.tags:
+            all_tags.update([tag.lower() for tag in product.tags if tag])
+    
+    # Determine primary category and styling
+    category_styles = {
+        'electronics': {
+            'style': 'sleek tech product photography',
+            'background': 'clean white background',
+            'lighting': 'bright professional lighting',
+            'composition': 'arranged on modern surface',
+            'quality': 'premium quality, sharp focus'
+        },
+        'food': {
+            'style': 'appetizing food photography',
+            'background': 'neutral background',
+            'lighting': 'warm natural lighting',
+            'composition': 'artfully arranged',
+            'quality': 'fresh, vibrant colors'
+        },
+        'beverage': {
+            'style': 'beverage product photography',
+            'background': 'clean background',
+            'lighting': 'crisp lighting with highlights',
+            'composition': 'elegantly positioned',
+            'quality': 'refreshing, condensation details'
+        },
+        'clothing': {
+            'style': 'fashion product photography',
+            'background': 'neutral backdrop',
+            'lighting': 'soft diffused lighting',
+            'composition': 'stylishly displayed',
+            'quality': 'texture details, fabric quality'
+        },
+        'beauty': {
+            'style': 'beauty product photography',
+            'background': 'pristine white background',
+            'lighting': 'even professional lighting',
+            'composition': 'aesthetically arranged',
+            'quality': 'luxurious, detailed textures'
+        },
+        'home': {
+            'style': 'lifestyle product photography',
+            'background': 'clean modern background',
+            'lighting': 'natural warm lighting',
+            'composition': 'thoughtfully arranged',
+            'quality': 'cozy, inviting atmosphere'
+        }
+    }
+    
+    # Determine primary category
+    primary_category = 'general'
+    for category in ['electronics', 'food', 'beverage', 'clothing', 'beauty', 'home']:
+        if any(cat in categories for cat in [category]):
+            primary_category = category
+            break
+    
+    # Check for mixed categories (different styling needed)
+    is_mixed = len(categories) > 1 and primary_category != 'general'
+    
+    # Get styling for category
+    if primary_category in category_styles:
+        style_info = category_styles[primary_category].copy()
+    else:
+        style_info = {
+            'style': 'professional product photography',
+            'background': 'clean white background',
+            'lighting': 'professional lighting',
+            'composition': 'neatly arranged',
+            'quality': 'high quality, detailed'
+        }
+    
+    # Adjust for mixed categories
+    if is_mixed:
+        style_info['style'] = 'diverse product photography'
+        style_info['composition'] = 'harmoniously arranged together'
+    
+    # Add premium modifiers for high-value items
+    premium_tags = {'premium', 'luxury', 'pro', 'max', 'ultra', 'flagship'}
+    if all_tags.intersection(premium_tags):
+        style_info['quality'] = 'premium quality, ' + style_info['quality']
+    
+    return {
+        'primary_category': primary_category,
+        'categories': categories,
+        'tags': all_tags,
+        'is_mixed': is_mixed,
+        'style_info': style_info
+    }
+
+
+def clean_product_name(name: str) -> str:
+    """
+    Clean product name for better prompt generation.
+    
+    Args:
+        name: Raw product name
+        
+    Returns:
+        Cleaned product name optimized for AI generation
+    """
+    if not name:
+        return "product"
+    
+    # Remove common noise words that don't help image generation
+    noise_words = {
+        'pack', 'bundle', 'set', 'combo', 'deal', 'special', 'limited',
+        'edition', 'version', 'model', 'brand', 'new', 'original'
+    }
+    
+    # Clean and split
+    words = name.lower().split()
+    cleaned_words = []
+    
+    for word in words:
+        # Remove noise words but keep important descriptors
+        if word not in noise_words and len(word) > 1:
+            cleaned_words.append(word)
+    
+    # Keep original if cleaning removed too much
+    if len(cleaned_words) < 2:
+        return name.strip()
+    
+    return ' '.join(cleaned_words).title()
+
+
 def build_bundle_prompt(bundle_name: str, products: List[ProductIn], description: Optional[str] = None) -> str:
     """
-    Build a simple, focused prompt for accurate bundle image generation.
-    Uses only product names and essential styling for better results.
+    Build an intelligent, context-aware prompt for bundle image generation.
+    Adapts style and composition based on product categories and attributes.
     
     Args:
         bundle_name: Name of the bundle
         products: List of products in the bundle
-        description: Optional bundle description (ignored for simplicity)
+        description: Optional bundle description
         
     Returns:
-        Clean, focused prompt string for image generation
+        Optimized prompt string for image generation
     """
-    # Get just the core product names (limit to 4 for clarity)
-    product_names = [p.name.strip() for p in products[:4] if p.name and p.name.strip()]
+    if not products:
+        return "products, professional photography, white background, high quality"
     
-    if not product_names:
-        # Fallback if no valid product names
-        product_names = ["products"]
+    # Analyze products for context-aware generation
+    context = get_product_category_keywords(products)
     
-    # Create simple, direct prompt focusing on the actual products
-    products_text = ", ".join(product_names)
+    # Clean and select best product names (limit to 3-4 for clarity)
+    cleaned_names = []
+    for product in products[:4]:
+        cleaned_name = clean_product_name(product.name)
+        if cleaned_name and cleaned_name not in cleaned_names:
+            cleaned_names.append(cleaned_name)
     
-    # Simple, clean prompt that focuses on the products themselves
-    prompt = f"{products_text}, product photography, white background, professional lighting, high quality"
+    if not cleaned_names:
+        cleaned_names = ["products"]
     
-    # Keep it under token limit (should be well under 77 tokens now)
-    return truncate_prompt_for_clip(prompt, max_tokens=50)  # Even more conservative limit
+    # Build main subject with explicit emphasis on showing ALL products
+    if len(cleaned_names) == 1:
+        main_subject = cleaned_names[0]
+        composition_emphasis = "single product showcase"
+    elif len(cleaned_names) == 2:
+        main_subject = f"{cleaned_names[0]} and {cleaned_names[1]} together"
+        composition_emphasis = "both products clearly visible side by side"
+    elif len(cleaned_names) == 3:
+        main_subject = f"{cleaned_names[0]}, {cleaned_names[1]}, and {cleaned_names[2]} all together"
+        composition_emphasis = "all three products prominently displayed"
+    else:
+        main_subject = f"{', '.join(cleaned_names[:-1])}, and {cleaned_names[-1]} all together"
+        composition_emphasis = "all products prominently displayed together"
+    
+    # Get style components and enhance composition for multiple products
+    style_info = context['style_info']
+    
+    # Override composition for multiple products to ensure visibility
+    if len(cleaned_names) > 1:
+        if context['primary_category'] == 'electronics':
+            style_info['composition'] = "arranged side by side on modern surface"
+        elif context['primary_category'] == 'food':
+            style_info['composition'] = "arranged together in appealing layout"
+        else:
+            style_info['composition'] = "arranged together prominently"
+    
+    # Build prompt components with explicit product visibility
+    prompt_parts = [
+        main_subject,
+        style_info['style'],
+        composition_emphasis if len(cleaned_names) > 1 else style_info['composition'],
+        style_info['background'],
+        style_info['lighting'],
+        style_info['quality']
+    ]
+    
+    # Join with natural flow
+    prompt = ", ".join(prompt_parts)
+    
+    # Add category-specific enhancements with multi-product emphasis
+    if len(products) > 1:
+        # Always emphasize multiple products being shown together
+        prompt += ", showing all items clearly"
+        
+        if context['primary_category'] == 'electronics' and context['tags'].intersection({'smartphone', 'phone'}):
+            prompt += ", each device fully visible, premium materials"
+        elif context['primary_category'] == 'food':
+            prompt += ", appetizing presentation, each item distinct"
+        elif context['is_mixed']:
+            prompt += ", cohesive styling, each product prominently featured"
+        else:
+            prompt += ", balanced composition, no overlapping products"
+    else:
+        # Single product enhancements
+        if context['primary_category'] == 'electronics' and context['tags'].intersection({'smartphone', 'phone'}):
+            prompt += ", screen reflections, premium materials"
+        elif context['primary_category'] == 'food':
+            prompt += ", appetizing presentation"
+    
+    # Keep it under token limit with smart truncation
+    return truncate_prompt_for_clip(prompt, max_tokens=55)  # Slightly higher for enhanced prompts
 
 
 async def generate_bundle_image(bundle_name: str, products: List[ProductIn], description: Optional[str] = None) -> str:
