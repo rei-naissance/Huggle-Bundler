@@ -26,8 +26,10 @@ except ImportError:
     if env_file.exists():
         with open(env_file) as f:
             for line in f:
-                if line.strip() and not line.startswith('#') and '=' in line:
-                    key, value = line.strip().split('=', 1)
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    # Split only on the first '=' to handle URLs with '&' and other special chars
+                    key, value = line.split('=', 1)
                     os.environ[key] = value
 
 logger = logging.getLogger(__name__)

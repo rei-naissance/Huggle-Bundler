@@ -26,7 +26,7 @@ class BundleCreate(BundleBase):
 
 
 class BundleOut(BundleBase):
-    id: int
+    id: str
     created_at: datetime
 
     class Config:

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
+import uuid
 
 from ..models.bundle import Bundle
 from ..schemas.bundle import BundleCreate
@@ -23,6 +24,7 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
         raise ValueError(f"Cannot create bundle: {str(e)}")
     
     bundle = Bundle(
+        id=str(uuid.uuid4()),
         store_id=data.store_id or "",
         signature=signature,
         name=data.name,
@@ -48,7 +50,7 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
         raise
 
 
-def get_bundle(db: Session, bundle_id: int) -> Optional[Bundle]:
+def get_bundle(db: Session, bundle_id: str) -> Optional[Bundle]:
     return db.query(Bundle).filter(Bundle.id == bundle_id).first()
 
 
