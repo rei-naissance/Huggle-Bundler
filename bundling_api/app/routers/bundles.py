@@ -68,7 +68,7 @@ def save_bundle(bundle: BundleCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{bundle_id}", response_model=BundleOut)
-def get_bundle_by_id(bundle_id: int, db: Session = Depends(get_db)):
+def get_bundle_by_id(bundle_id: str, db: Session = Depends(get_db)):
     b = get_bundle(db, bundle_id)
     if not b:
         raise HTTPException(status_code=404, detail="Bundle not found")
@@ -105,7 +105,7 @@ def list_bundles(store_id: str = Query(...), limit: int = 50, offset: int = 0, d
 # IMAGE GENERATION ENDPOINTS
 
 @router.post("/{bundle_id}/generate-image")
-def generate_image_for_bundle(bundle_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def generate_image_for_bundle(bundle_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Generate an AI image for a specific bundle using Fal.AI.
     Updates the bundle record with the generated image URL.

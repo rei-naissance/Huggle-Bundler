@@ -9,12 +9,14 @@ import requests
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-IMAGE_SERVER_BASE_URL = "http://localhost:8001"
+# Use the configured image API URL (huggle.tech in production)
+IMAGE_SERVER_BASE_URL = settings.local_image_api_url
 
 
 @router.get("/generated/{filename}")
@@ -23,7 +25,7 @@ async def serve_generated_image(filename: str):
     Proxy images from local image generation server.
     
     Frontend accesses: /api/images/generated/abc123.png
-    Backend proxies from: http://localhost:8001/images/abc123.png
+    Backend proxies from: https://image.huggle.tech/images/abc123.png (or localhost in dev)
     """
     try:
         # Validate filename (basic security)

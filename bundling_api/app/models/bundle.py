@@ -14,7 +14,7 @@ class Bundle(Base):
         UniqueConstraint('store_id', 'signature', name='uq_bundle_store_signature'),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
 
     # Scoping
     store_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
