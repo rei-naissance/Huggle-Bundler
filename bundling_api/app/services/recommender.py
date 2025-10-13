@@ -45,6 +45,8 @@ def recommend_bundles(db: Session, store_id: str, num_bundles: int = 3) -> List[
             expires_on=expires_on,
             stock=int(p.get("stock") or 0),
             tags=__parse_tags(p.get("tags")),
+            price=float(p.get("price") or 0.0),
+            original_price=float(p.get("originalPrice") or 0.0),
         )
         products.append(product)
 
