@@ -338,6 +338,8 @@ def generate_bundles_for_store(db, store_id: str, num_bundles: int = 3) -> list[
                 expires_on=expires_on,
                 stock=int(pr.get("stock") or 0),
                 tags=__parse_tags(pr.get("tags")),
+                price=float(pr.get("price") or 0.0),
+                original_price=float(pr.get("originalPrice") or 0.0),
             ))
         # Ensure 2-5 items
         if len(chosen_products) < 2:
@@ -388,6 +390,8 @@ def generate_bundles_for_store(db, store_id: str, num_bundles: int = 3) -> list[
                     expires_on=exp,
                     stock=int(pr.get("stock") or 0),
                     tags=__parse_tags(pr.get("tags")),
+                    price=float(pr.get("price") or 0.0),
+                    original_price=float(pr.get("originalPrice") or 0.0),
                 )
             chosen = [to_product_in(pr1), to_product_in(pr2)]
             stock = min([p.stock for p in chosen])

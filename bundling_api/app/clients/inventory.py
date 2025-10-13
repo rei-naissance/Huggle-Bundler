@@ -8,11 +8,10 @@ from fastapi import HTTPException
 def fetch_products_for_store(db: Session, store_id: str) -> List[Dict]:
     q = text(
         """
-        SELECT id, name, "productType", "expiresOn", stock, tags
+        SELECT id, name, "productType", "expiresOn", stock, tags, price, "originalPrice", "productCost"
         FROM products
         WHERE "storeId" = :store_id AND ("isActive" = true OR "isActive" IS NULL)
-        """
-    )
+        """)
     try:
         res = db.execute(q, {"store_id": store_id})
     except OperationalError:

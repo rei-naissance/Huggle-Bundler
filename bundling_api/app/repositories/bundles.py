@@ -2,14 +2,19 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 import uuid
+import logging
+from datetime import datetime, timedelta
 
 from ..models.bundle import Bundle
 from ..schemas.bundle import BundleCreate
 from ..utils.signatures import compute_bundle_signature
+from ..services.pricing import calculate_bundle_pricing
+
+logger = logging.getLogger(__name__)
 
 
 def create_bundle(db: Session, data: BundleCreate) -> Bundle:
-    """Create a new bundle with automatic signature computation.
+    """Create a new bundle with automatic signature computation and pricing calculation.
     
     Raises:
         ValueError: If a bundle with the same products already exists in this store
@@ -23,6 +28,29 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
     except ValueError as e:
         raise ValueError(f"Cannot create bundle: {str(e)}")
     
+    # Calculate pricing information
+    pricing_info = {}
+    try:
+        if data.products:  # Only calculate if we have products with pricing
+            raw_pricing = calculate_bundle_pricing(data.products)
+            logger.info(f"Calculated pricing for bundle: {raw_pricing}")
+            
+            # Map to database field names
+            pricing_info = {
+                'original_price': raw_pricing.get('total_price', 0.0),  # Sum of individual prices
+                'price': raw_pricing.get('discounted_price', raw_pricing.get('total_price', 0.0)),  # Final selling price
+                'total_cost': raw_pricing.get('total_price', 0.0),  # Cost calculation (same as total for now)
+            }
+    except Exception as e:
+        logger.warning(f"Failed to calculate pricing for bundle: {e}")
+        # Set default pricing values if calculation fails
+        total_price = sum(p.price for p in data.products) if data.products else 0.0
+        pricing_info = {
+            'original_price': total_price,
+            'price': total_price,
+            'total_cost': total_price,
+        }
+    
     bundle = Bundle(
         id=str(uuid.uuid4()),
         store_id=data.store_id or "",
@@ -32,6 +60,14 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
         products=products_data,
         images=data.images or [],
         stock=data.stock,
+        # Add pricing fields using correct database column names
+        price=pricing_info.get('price', 0.0),
+        original_price=pricing_info.get('original_price', 0.0),
+        total_cost=pricing_info.get('total_cost', 0.0),
+        is_dynamic_pricing_enabled=False,
+        dynamic_pricing_start_days=14,
+        is_active=True,
+        expires_on=datetime.utcnow() + timedelta(days=30),
     )
     
     try:

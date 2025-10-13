@@ -45,6 +45,9 @@ def recommend_ai_and_save(req: AIRecommendRequest, db: Session = Depends(get_db)
                 images=saved.images,
                 image_url=saved.image_url,
                 stock=saved.stock,
+                price=float(saved.price) if saved.price else None,
+                original_price=float(saved.original_price) if saved.original_price else None,
+                total_cost=float(saved.total_cost) if saved.total_cost else None,
                 created_at=saved.created_at,
             )
         )
@@ -63,6 +66,9 @@ def save_bundle(bundle: BundleCreate, db: Session = Depends(get_db)):
         images=saved.images,
         image_url=saved.image_url,
         stock=saved.stock,
+        price=float(saved.price) if saved.price else None,
+        original_price=float(saved.original_price) if saved.original_price else None,
+        total_cost=float(saved.total_cost) if saved.total_cost else None,
         created_at=saved.created_at,
     )
 
@@ -80,6 +86,9 @@ def get_bundle_by_id(bundle_id: str, db: Session = Depends(get_db)):
         images=b.images,
         image_url=b.image_url,
         stock=b.stock,
+        price=float(b.price) if b.price else None,
+        original_price=float(b.original_price) if b.original_price else None,
+        total_cost=float(b.total_cost) if b.total_cost else None,
         created_at=b.created_at,
     )
 
@@ -96,6 +105,9 @@ def list_bundles(store_id: str = Query(...), limit: int = 50, offset: int = 0, d
             images=b.images,
             image_url=b.image_url,
             stock=b.stock,
+            price=float(b.price) if b.price else None,
+            original_price=float(b.original_price) if b.original_price else None,
+            total_cost=float(b.total_cost) if b.total_cost else None,
             created_at=b.created_at,
         )
         for b in items
@@ -233,6 +245,9 @@ def recommend_ai_save_and_generate_images(
             images=bundle.images,
             image_url=bundle.image_url,
             stock=bundle.stock,
+            price=float(bundle.price) if bundle.price else None,
+            original_price=float(bundle.original_price) if bundle.original_price else None,
+            total_cost=float(bundle.total_cost) if bundle.total_cost else None,
             created_at=bundle.created_at,
         )
         for bundle in saved_bundles

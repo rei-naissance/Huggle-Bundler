@@ -10,6 +10,8 @@ class ProductIn(BaseModel):
     expires_on: Optional[datetime] = None
     stock: int
     tags: List[str] = []
+    price: float = Field(description="Individual product price")
+    original_price: Optional[float] = Field(default=None, description="Original price before any discounts")
 
 
 class BundleBase(BaseModel):
@@ -19,6 +21,10 @@ class BundleBase(BaseModel):
     images: List[str] = []
     image_url: Optional[str] = None
     stock: int = 0
+    # Pricing fields
+    price: Optional[float] = Field(default=None, description="Final bundle price after any discounts")
+    original_price: Optional[float] = Field(default=None, description="Original total price of all products")
+    total_cost: Optional[float] = Field(default=None, description="Total cost of bundle")
 
 
 class BundleCreate(BundleBase):
