@@ -26,6 +26,10 @@ def _safe_parse_dt(value) -> datetime | None:
 
 def recommend_bundles(db: Session, store_id: str, num_bundles: int = 3) -> List[BundleCreate]:
     products_raw = fetch_products_for_store(db, store_id)
+    # Exclude suspended items if column/data present
+    before = len(products_raw)
+    products_raw = [p for p in products_raw if not bool(p.get("is_suspended"))]
+    # No verbose logging here; upstream callers will log counts
     
     def product_ids_from_bundle(ps: List[ProductIn]) -> List[str]:
         """Extract product IDs from a list of ProductIn objects."""

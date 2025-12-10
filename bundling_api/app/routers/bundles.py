@@ -14,8 +14,462 @@ from ..services.image_generator import (
     ImageGenerationError
 )
 from ..models.bundle import Bundle
+from ..config import settings
 
 router = APIRouter()
+
+
+@router.post("/debug-ai-config")
+def debug_ai_configuration(
+    req: AIRecommendRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Temporary debug endpoint to check AI configuration and store data.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    from ..clients.inventory import fetch_products_for_store
+    from ..repositories.bundles import bundle_exists_for_products
+    
+    # Check AI configuration
+    ai_config = {
+        "ai_provider": settings.ai_provider,
+        "openrouter_api_key_set": bool(settings.openrouter_api_key),
+        "openrouter_model": settings.openrouter_model,
+        "groq_api_key_set": bool(settings.groq_api_key),
+        "groq_model": settings.groq_model,
+    }
+    
+    # Check store products
+    products_raw = fetch_products_for_store(db, req.store_id)
+    
+    # Check existing bundles
+    existing_bundles = db.query(Bundle).filter(Bundle.store_id == req.store_id).all()
+    
+    # Sample bundle existence checks
+    sample_checks = []
+    if len(products_raw) >= 2:
+        product_ids = [str(p.get("id")) for p in products_raw[:2]]
+        exists = bundle_exists_for_products(db, req.store_id, product_ids)
+        sample_checks.append({
+            "product_ids": product_ids,
+            "bundle_exists": exists
+        })
+    
+    return {
+        "store_id": req.store_id,
+        "ai_config": ai_config,
+        "products_count": len(products_raw),
+        "products_sample": products_raw[:3] if products_raw else [],
+        "existing_bundles_count": len(existing_bundles),
+        "existing_bundles": [{
+            "id": b.id,
+            "name": b.name,
+            "signature": b.signature
+        } for b in existing_bundles],
+        "sample_bundle_checks": sample_checks
+    }
+
+
+@router.post("/test-manual-bundle")
+def test_manual_bundle_creation(
+    req: AIRecommendRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Temporary test endpoint to create a bundle manually without AI.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    from ..clients.inventory import fetch_products_for_store
+    from ..schemas.bundle import ProductIn
+    
+    logger.info(f"🚀 Manual bundle test for store: {req.store_id}")
+    
+    # Fetch products
+    products_raw = fetch_products_for_store(db, req.store_id)
+    logger.info(f"Found {len(products_raw)} products")
+    
+    if len(products_raw) < 2:
+        return {
+            "success": False,
+            "error": "Need at least 2 products to create a bundle",
+            "products_count": len(products_raw)
+        }
+    
+    # Take first 2 products and create a manual bundle
+    p1, p2 = products_raw[0], products_raw[1]
+    
+    # Create ProductIn objects
+    from ..utils.dates import parse_expiry as _safe_parse_dt
+    from ..utils.text import parse_tags_str as __parse_tags
+    from datetime import datetime, timezone
+    
+    def make_product_in(p):
+        expires_on = _safe_parse_dt(p.get("expiresOn"))
+        if expires_on is None or (isinstance(expires_on, datetime) and expires_on.year < 1900):
+            expires_on = datetime(9999, 1, 1, tzinfo=timezone.utc)
+        return ProductIn(
+            id=str(p.get("id")),
+            name=p.get("name") or "Unnamed",
+            product_type=p.get("productType") or None,
+            expires_on=expires_on,
+            stock=int(p.get("stock") or 0),
+            tags=__parse_tags(p.get("tags")),
+            price=float(p.get("price") or 0.0),
+            original_price=float(p.get("originalPrice") or 0.0),
+        )
+    
+    product_in_1 = make_product_in(p1)
+    product_in_2 = make_product_in(p2)
+    
+    # Create bundle
+    from ..schemas.bundle import BundleCreate
+    
+    test_bundle = BundleCreate(
+        store_id=req.store_id,
+        name=f"Test Bundle: {product_in_1.name} + {product_in_2.name}",
+        description=f"Manual test bundle with {product_in_1.name} and {product_in_2.name}",
+        products=[product_in_1, product_in_2],
+        images=[],
+        stock=min(product_in_1.stock, product_in_2.stock)
+    )
+    
+    try:
+        # Try to create the bundle
+        saved_bundle = create_bundle(db, test_bundle)
+        
+        return {
+            "success": True,
+            "bundle": BundleOut(
+                id=saved_bundle.id,
+                name=saved_bundle.name,
+                description=saved_bundle.description,
+                products=saved_bundle.products,
+                images=saved_bundle.images,
+                image_url=saved_bundle.image_url,
+                stock=saved_bundle.stock,
+                price=float(saved_bundle.price) if saved_bundle.price else None,
+                original_price=float(saved_bundle.original_price) if saved_bundle.original_price else None,
+                total_cost=float(saved_bundle.total_cost) if saved_bundle.total_cost else None,
+                created_at=saved_bundle.created_at,
+            ),
+            "message": "Manual bundle created successfully"
+        }
+    except Exception as e:
+        logger.error(f"Failed to create manual bundle: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "bundle_data": {
+                "name": test_bundle.name,
+                "products": [product_in_1.name, product_in_2.name]
+            }
+        }
+
+
+@router.post("/test-ai-providers")
+def test_ai_providers(
+    req: AIRecommendRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Temporary test endpoint to test AI providers directly.
+    """
+    import httpx
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    results = {
+        "store_id": req.store_id,
+        "groq_test": {},
+        "openrouter_test": {}
+    }
+    
+    # Test Groq
+    if settings.groq_api_key and settings.groq_model:
+        try:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {settings.groq_api_key}",
+                "Content-Type": "application/json",
+            }
+            data = {
+                "model": settings.groq_model,
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant. Respond with valid JSON only."},
+                    {"role": "user", "content": "Create a simple test response: {\"test\": \"success\", \"message\": \"Groq is working\"}"}
+                ],
+                "temperature": 0.1,
+            }
+            
+            resp = httpx.post(url, headers=headers, json=data, timeout=httpx.Timeout(10.0))
+            resp.raise_for_status()
+            response_json = resp.json()
+            
+            results["groq_test"] = {
+                "success": True,
+                "status_code": resp.status_code,
+                "model_used": settings.groq_model,
+                "response_content": response_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+            }
+        except Exception as e:
+            results["groq_test"] = {
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "model_attempted": settings.groq_model
+            }
+    else:
+        results["groq_test"] = {
+            "success": False,
+            "error": "API key or model not configured",
+            "api_key_set": bool(settings.groq_api_key),
+            "model_set": bool(settings.groq_model)
+        }
+    
+    # Test OpenRouter
+    if settings.openrouter_api_key:
+        try:
+            model = settings.openrouter_model or "openai/gpt-3.5-turbo"
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://huggle.tech",
+                "X-Title": "Bundling API",
+            }
+            data = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant. Respond with valid JSON only."},
+                    {"role": "user", "content": "Create a simple test response: {\"test\": \"success\", \"message\": \"OpenRouter is working\"}"}
+                ],
+                "temperature": 0.1,
+            }
+            
+            resp = httpx.post(url, headers=headers, json=data, timeout=httpx.Timeout(10.0))
+            resp.raise_for_status()
+            response_json = resp.json()
+            
+            results["openrouter_test"] = {
+                "success": True,
+                "status_code": resp.status_code,
+                "model_used": model,
+                "response_content": response_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+            }
+        except Exception as e:
+            results["openrouter_test"] = {
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "model_attempted": settings.openrouter_model
+            }
+    else:
+        results["openrouter_test"] = {
+            "success": False,
+            "error": "API key not configured",
+            "api_key_set": bool(settings.openrouter_api_key)
+        }
+    
+    return results
+
+
+@router.post("/debug-ai-verbose")
+def debug_ai_verbose_test(
+    req: AIRecommendRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Verbose debug endpoint that calls generate_bundles_for_store with detailed output.
+    """
+    import logging
+    import io
+    import sys
+    from contextlib import redirect_stderr, redirect_stdout
+    
+    # Capture all logging output
+    log_capture = io.StringIO()
+    log_handler = logging.StreamHandler(log_capture)
+    log_handler.setLevel(logging.DEBUG)
+    
+    # Get the AI service logger
+    ai_logger = logging.getLogger('app.services.ai')
+    ai_logger.addHandler(log_handler)
+    ai_logger.setLevel(logging.DEBUG)
+    
+    # Also get inventory logger
+    inventory_logger = logging.getLogger('app.clients.inventory')
+    inventory_logger.addHandler(log_handler)
+    inventory_logger.setLevel(logging.DEBUG)
+    
+    try:
+        # Call the actual function
+        candidates = generate_bundles_for_store(db, store_id=req.store_id, num_bundles=req.num_bundles)
+        
+        # Get all log output
+        log_output = log_capture.getvalue()
+        
+        return {
+            "success": True,
+            "store_id": req.store_id,
+            "candidates_count": len(candidates),
+            "candidates": [{
+                "name": c.name,
+                "product_count": len(c.products),
+                "product_names": [p.name for p in c.products]
+            } for c in candidates],
+            "debug_logs": log_output.split('\n')[-50:],  # Last 50 log lines
+            "full_log_length": len(log_output.split('\n'))
+        }
+    except Exception as e:
+        log_output = log_capture.getvalue()
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "debug_logs": log_output.split('\n')[-50:],
+            "full_log_length": len(log_output.split('\n'))
+        }
+    finally:
+        # Clean up handlers
+        ai_logger.removeHandler(log_handler)
+        inventory_logger.removeHandler(log_handler)
+        log_handler.close()
+
+
+@router.post("/debug-combinations")
+def debug_all_combinations(
+    req: AIRecommendRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Debug endpoint to check all possible 2-product combinations for a store.
+    """
+    from itertools import combinations
+    from ..clients.inventory import fetch_products_for_store
+    from ..repositories.bundles import bundle_exists_for_products
+    
+    # Get all products
+    products_raw = fetch_products_for_store(db, req.store_id)
+    
+    if len(products_raw) < 2:
+        return {"error": "Need at least 2 products", "products_count": len(products_raw)}
+    
+    # Get all product IDs
+    product_ids = [str(p.get("id")) for p in products_raw]
+    product_names = {str(p.get("id")): p.get("name") for p in products_raw}
+    
+    # Test all 2-product combinations
+    results = []
+    for combo in combinations(product_ids, 2):
+        combo_list = list(combo)
+        exists = bundle_exists_for_products(db, req.store_id, combo_list)
+        
+        results.append({
+            "product_ids": combo_list,
+            "product_names": [product_names[pid] for pid in combo_list],
+            "exists": exists
+        })
+    
+    # Test all 3-product combinations
+    results_3 = []
+    for combo in combinations(product_ids, 3):
+        combo_list = list(combo)
+        exists = bundle_exists_for_products(db, req.store_id, combo_list)
+        
+        results_3.append({
+            "product_ids": combo_list,
+            "product_names": [product_names[pid] for pid in combo_list],
+            "exists": exists
+        })
+    
+    existing_count_2 = sum(1 for r in results if r["exists"])
+    available_count_2 = sum(1 for r in results if not r["exists"])
+    
+    existing_count_3 = sum(1 for r in results_3 if r["exists"])
+    available_count_3 = sum(1 for r in results_3 if not r["exists"])
+    
+    return {
+        "store_id": req.store_id,
+        "total_products": len(products_raw),
+        "product_list": [{"id": pid, "name": product_names[pid]} for pid in product_ids],
+        "two_product_combinations": {
+            "total_possible": len(results),
+            "existing": existing_count_2,
+            "available": available_count_2,
+            "details": results
+        },
+        "three_product_combinations": {
+            "total_possible": len(results_3),
+            "existing": existing_count_3, 
+            "available": available_count_3,
+            "sample_available": [r for r in results_3 if not r["exists"]][:3]
+        }
+        }
+
+
+@router.post("/analyze-bundle-availability")
+def analyze_bundle_availability(
+    req: AIRecommendRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Comprehensive analysis of bundle availability for a store.
+    Shows all possible combinations and which exist.
+    """
+    from itertools import combinations as combo_func
+    from ..clients.inventory import fetch_products_for_store
+    from ..repositories.bundles import bundle_exists_for_products, count_bundles_by_store
+    
+    # Get all products
+    products_raw = fetch_products_for_store(db, req.store_id)
+    
+    if len(products_raw) < 2:
+        return {"error": "Need at least 2 products", "products_count": len(products_raw)}
+    
+    # Get all product IDs and names
+    product_ids = [str(p.get("id")) for p in products_raw]
+    product_names = {str(p.get("id")): p.get("name") for p in products_raw}
+    
+    # Analyze all combination sizes
+    analysis = {
+        "store_id": req.store_id,
+        "total_products": len(products_raw),
+        "total_existing_bundles": count_bundles_by_store(db, req.store_id),
+        "products": [{"id": pid, "name": product_names[pid]} for pid in product_ids],
+        "combinations": {}
+    }
+    
+    # Check combinations from size 2 to 5
+    for size in range(2, min(6, len(products_raw) + 1)):
+        combos = list(combo_func(product_ids, size))
+        existing_count = 0
+        available_combos = []
+        
+        for combo in combos:
+            combo_list = list(combo)
+            exists = bundle_exists_for_products(db, req.store_id, combo_list)
+            
+            if exists:
+                existing_count += 1
+            else:
+                available_combos.append({
+                    "product_ids": combo_list,
+                    "product_names": [product_names[pid] for pid in combo_list]
+                })
+        
+        analysis["combinations"][f"{size}_products"] = {
+            "total_possible": len(combos),
+            "existing": existing_count,
+            "available": len(available_combos),
+            "available_combinations": available_combos[:10]  # Show first 10
+        }
+    
+    return analysis
 
 
 @router.post("/recommend", response_model=List[BundleCreate])
@@ -210,8 +664,15 @@ def recommend_ai_save_and_generate_images(
     AI recommend bundles, save them, and immediately generate images.
     This combines bundle creation and image generation in one efficient call.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"🔍 AI recommendation request received - Store ID: {req.store_id}, Num bundles: {req.num_bundles}")
+    
     # Generate bundle recommendations
+    logger.info(f"📦 Calling generate_bundles_for_store with store_id='{req.store_id}', num_bundles={req.num_bundles}")
     candidates = generate_bundles_for_store(db, store_id=req.store_id, num_bundles=req.num_bundles)
+    logger.info(f"📊 Generated {len(candidates)} bundle candidates: {[c.name for c in candidates] if candidates else 'None'}")
     
     if not candidates:
         return []
