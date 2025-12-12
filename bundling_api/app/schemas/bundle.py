@@ -1,17 +1,20 @@
 from datetime import datetime, date
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ProductIn(BaseModel):
+    """Product data for bundle creation. Uses camelCase for JSON to match main backend."""
+    model_config = ConfigDict(populate_by_name=True)
+    
     id: str
     name: str
-    product_type: Optional[str] = Field(default=None, description="Category or type")
-    expires_on: Optional[datetime] = None
+    product_type: Optional[str] = Field(default=None, alias="productType", description="Category or type")
+    expires_on: Optional[datetime] = Field(default=None, alias="expiresOn")
     stock: int
     tags: List[str] = []
     price: float = Field(description="Individual product price")
-    original_price: Optional[float] = Field(default=None, description="Original price before any discounts")
+    original_price: Optional[float] = Field(default=None, alias="originalPrice", description="Original price before any discounts")
 
 
 class BundleBase(BaseModel):

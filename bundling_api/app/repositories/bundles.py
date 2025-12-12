@@ -20,7 +20,7 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
         ValueError: If a bundle with the same products already exists in this store
         ValueError: If no valid products are provided for signature computation
     """
-    products_data = [p.model_dump(mode="json") for p in data.products]
+    products_data = [p.model_dump(mode="json", by_alias=True) for p in data.products]
     
     # Compute signature for deduplication
     try:
