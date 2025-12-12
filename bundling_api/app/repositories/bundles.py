@@ -67,6 +67,7 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
         is_dynamic_pricing_enabled=False,
         dynamic_pricing_start_days=14,
         is_active=True,
+        is_suspended=False,  # Ensure bundle is not suspended by default
         expires_on=datetime.utcnow() + timedelta(days=30),
     )
     

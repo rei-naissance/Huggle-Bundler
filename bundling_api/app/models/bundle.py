@@ -39,8 +39,10 @@ class Bundle(Base):
     dynamic_pricing_start_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
     last_price_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    is_suspended: Mapped[bool] = mapped_column(nullable=False, default=False)  # Moderation flag
     expires_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     deleted_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
