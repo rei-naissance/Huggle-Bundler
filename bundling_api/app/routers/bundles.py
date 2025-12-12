@@ -713,3 +713,84 @@ def recommend_ai_save_and_generate_images(
         )
         for bundle in saved_bundles
     ]
+
+
+@router.post("/recommend/ai/preview-with-images", response_model=List[BundleCreate])
+def recommend_ai_preview_with_images(
+    req: AIRecommendRequest, 
+    db: Session = Depends(get_db)
+) -> List[BundleCreate]:
+    """
+    AI recommend bundles and generate images WITHOUT saving to database.
+    Returns bundle previews for user selection. User can then save selected
+    bundle via the main backend's bundle creation endpoint.
+    
+    This is the recommended flow for UIs that show multiple bundle options
+    and let the user select one to save.
+    """
+    import logging
+    import uuid
+    from datetime import datetime, timezone
+    
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"🔍 AI preview request received - Store ID: {req.store_id}, Num bundles: {req.num_bundles}")
+    
+    # Generate bundle recommendations (BundleCreate schemas, not saved)
+    logger.info(f"📦 Calling generate_bundles_for_store for preview with store_id='{req.store_id}', num_bundles={req.num_bundles}")
+    candidates = generate_bundles_for_store(db, store_id=req.store_id, num_bundles=req.num_bundles)
+    logger.info(f"📊 Generated {len(candidates)} preview candidates: {[c.name for c in candidates] if candidates else 'None'}")
+    
+    if not candidates:
+        return []
+    
+    # Create temporary Bundle objects for image generation
+    # These are NOT saved to the database
+    temp_bundles = []
+    candidate_to_temp_id = {}  # Map candidate index to temp bundle ID
+    
+    for i, candidate in enumerate(candidates):
+        temp_id = str(uuid.uuid4())
+        candidate_to_temp_id[i] = temp_id
+        
+        # Create a Bundle-like object for image generation
+        # Using the actual Bundle model temporarily (won't be persisted)
+        temp_bundle = Bundle(
+            id=temp_id,
+            store_id=candidate.store_id,
+            name=candidate.name,
+            description=candidate.description,
+            products=[p.model_dump() for p in candidate.products],
+            images=candidate.images or [],
+            image_url=None,
+            stock=candidate.stock,
+            signature="preview",  # Marker for preview bundles
+            price=candidate.price or 0,
+            original_price=candidate.original_price or 0,
+            total_cost=candidate.total_cost or 0,
+            is_dynamic_pricing_enabled=False,
+            dynamic_pricing_start_days=14,
+            last_price_update=None,
+            is_active=True,
+            is_suspended=False,
+            expires_on=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            deleted_on=None,
+        )
+        temp_bundles.append(temp_bundle)
+    
+    # Generate images for the temporary bundles (uploads to R2)
+    logger.info(f"🎨 Generating images for {len(temp_bundles)} preview bundles...")
+    image_results = generate_images_for_bundles(temp_bundles, max_concurrent=3)
+    logger.info(f"📷 Image generation results: {len([v for v in image_results.values() if v])} successful")
+    
+    # Update candidates with generated image URLs
+    for i, candidate in enumerate(candidates):
+        temp_id = candidate_to_temp_id[i]
+        if temp_id in image_results and image_results[temp_id]:
+            candidate.image_url = image_results[temp_id]
+            logger.info(f"✅ Preview bundle '{candidate.name}' got image: {candidate.image_url}")
+    
+    logger.info(f"✨ Returning {len(candidates)} preview bundles (not saved to database)")
+    return candidates
