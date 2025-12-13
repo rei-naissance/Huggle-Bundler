@@ -20,7 +20,7 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
         ValueError: If a bundle with the same products already exists in this store
         ValueError: If no valid products are provided for signature computation
     """
-    products_data = [p.model_dump(mode="json") for p in data.products]
+    products_data = [p.model_dump(mode="json", by_alias=True) for p in data.products]
     
     # Compute signature for deduplication
     try:
@@ -67,6 +67,7 @@ def create_bundle(db: Session, data: BundleCreate) -> Bundle:
         is_dynamic_pricing_enabled=False,
         dynamic_pricing_start_days=14,
         is_active=True,
+        is_suspended=False,  # Ensure bundle is not suspended by default
         expires_on=datetime.utcnow() + timedelta(days=30),
     )
     
