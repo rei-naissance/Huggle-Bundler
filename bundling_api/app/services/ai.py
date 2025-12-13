@@ -203,7 +203,7 @@ def _openrouter_generate_bundles(catalog_lines: list[str], num_bundles: int) -> 
     system = (
         "You create retail product bundles to reduce waste and increase sales. "
         "Only use product IDs from the provided catalog. Prioritize items expiring soon. "
-        "Avoid zero-stock items. Bundle size: 2-5 items. Output JSON only."
+        "Avoid zero-stock items. Bundle size: 3-4 items preferred, include as many products as makes sense. Output JSON only."
     )
     user = (
         "Product Catalog (one per line):\n" + "\n".join(catalog_lines) + "\n\n" +
@@ -270,7 +270,7 @@ def _groq_generate_bundles(catalog_lines: list[str], num_bundles: int, suggestio
         "You create NEW retail product bundles to reduce waste and increase sales. "
         "IMPORTANT: Only suggest combinations that are NOT in the exclusion list. "
         "Only use product IDs from the provided catalog. Prioritize items expiring soon. "
-        "Avoid zero-stock items. Bundle size: 2-3 items preferred. Output valid JSON only."
+        "Avoid zero-stock items. Bundle size: 3-4 items preferred, include as many products as makes sense. Output valid JSON only."
     )
     user = (
         "Product Catalog (one per line):\n" + "\n".join(catalog_lines) + "\n\n" +
