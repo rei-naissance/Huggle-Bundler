@@ -13,6 +13,43 @@ from ..utils.text import parse_tags_str as __parse_tags
 from ..repositories.bundles import bundle_exists_for_products
 
 
+# Creative fallback bundle name templates for when AI generation fails
+# Each tuple: (name_template, product_count)
+FALLBACK_BUNDLE_NAMES = [
+    # 2-product names
+    ("Smart Saver Duo", 2),
+    ("Fresh Finds Pair", 2),
+    ("Daily Essentials Pack", 2),
+    ("Quick Grab Combo", 2),
+    ("Perfect Match Bundle", 2),
+    ("Everyday Duo", 2),
+    ("Grab & Go Pack", 2),
+    ("Tasty Twosome", 2),
+    ("Double Delight", 2),
+    ("Dynamic Duo Deal", 2),
+    # 3-product names
+    ("Triple Treat Bundle", 3),
+    ("Trio Savings Pack", 3),
+    ("Three's Company Deal", 3),
+    ("Lucky Three Bundle", 3),
+    ("Power Trio Pack", 3),
+    ("Terrific Trio", 3),
+    ("Triple Value Set", 3),
+    # 4-product names
+    ("Fantastic Four Bundle", 4),
+    ("Quad Value Pack", 4),
+    ("Family Favorites Set", 4),
+    ("Super Saver Quartet", 4),
+    ("Four Star Selection", 4),
+    # 5-product names
+    ("Ultimate Five Bundle", 5),
+    ("High Five Value Pack", 5),
+    ("Five Star Selection", 5),
+    ("Mega Savings Pack", 5),
+    ("Complete Collection", 5),
+]
+
+
 def _extract_json_object(text: str) -> dict | None:
     """Try to parse a JSON object from a string, handling code fences or extra text."""
     if not isinstance(text, str):
@@ -201,13 +238,34 @@ def _openrouter_generate_bundles(catalog_lines: list[str], num_bundles: int) -> 
         "X-Title": "Bundling API",
     }
     system = (
-        "You create retail product bundles to reduce waste and increase sales. "
-        "Only use product IDs from the provided catalog. Prioritize items expiring soon. "
-        "Avoid zero-stock items. Bundle size: 3-4 items preferred, include as many products as makes sense. Output JSON only."
+        "You are a creative retail merchandiser who creates compelling and diverse product bundles. "
+        "Your bundles should reduce waste, increase sales, and provide genuine value to customers.\n\n"
+        "IMPORTANT GUIDELINES:\n"
+        "1. NAMING: Create UNIQUE, catchy, and descriptive bundle names. NEVER use generic names like "
+        "'Quick Pair Pack', 'Value Bundle', 'Combo Deal', or 'Product Bundle'. Instead, use creative themes like:\n"
+        "   - Meal/occasion themes: 'Weekend Breakfast Essentials', 'Movie Night Munchies', 'Picnic Perfect Pack'\n"
+        "   - Benefit-focused: 'Pantry Staples Starter', 'Fresh & Healthy Grab', 'Kitchen Kickstart Kit'\n"
+        "   - Fun/playful: 'Snack Attack Pack', 'Treat Yourself Bundle', 'Flavor Fiesta'\n"
+        "2. SIZE VARIETY: Create bundles with DIFFERENT sizes. Mix it up!\n"
+        "   - Some bundles with 2-3 items (quick grabs)\n"
+        "   - Some bundles with 3-4 items (value combos)\n"
+        "   - Some bundles with 4-5 items (mega deals)\n"
+        "3. COMPOSITION: Group products that make sense together (complementary items, same meal, etc.)\n"
+        "4. DESCRIPTIONS: Write engaging 1-2 sentence descriptions highlighting the value\n"
+        "5. PRIORITIZE items expiring soon (lower expires_in_days = higher priority)\n"
+        "6. AVOID zero-stock items\n"
+        "7. Only use product IDs from the provided catalog\n"
+        "Output valid JSON only."
     )
     user = (
-        "Product Catalog (one per line):\n" + "\n".join(catalog_lines) + "\n\n" +
-        f"Create up to {num_bundles} bundles as JSON: {{\"bundles\":[{{\"name\":str,\"description\":str,\"product_ids\":[str,...]}}...]}}"
+        "Product Catalog (one per line - format: ID | Name | type | stock | expires_in_days | tags):\n" 
+        + "\n".join(catalog_lines) + "\n\n"
+        + f"Create exactly {num_bundles} DIVERSE bundles with these requirements:\n"
+        + "- Each bundle MUST have a UNIQUE, creative name (no generic names!)\n"
+        + "- Vary bundle sizes: include a mix of 2, 3, 4, and 5 product bundles\n"
+        + "- Each description should explain WHY these products go together\n"
+        + "- Focus on products expiring soonest\n\n"
+        + "Return JSON: {\"bundles\":[{\"name\":str,\"description\":str,\"product_ids\":[str,...]}...]}"
     )
     data = {
         "model": model,
@@ -267,15 +325,35 @@ def _groq_generate_bundles(catalog_lines: list[str], num_bundles: int, suggestio
         "Content-Type": "application/json",
     }
     system = (
-        "You create NEW retail product bundles to reduce waste and increase sales. "
-        "IMPORTANT: Only suggest combinations that are NOT in the exclusion list. "
-        "Only use product IDs from the provided catalog. Prioritize items expiring soon. "
-        "Avoid zero-stock items. Bundle size: 3-4 items preferred, include as many products as makes sense. Output valid JSON only."
+        "You are a creative retail merchandiser who creates compelling and diverse product bundles. "
+        "Your bundles should reduce waste, increase sales, and provide genuine value to customers.\n\n"
+        "IMPORTANT GUIDELINES:\n"
+        "1. NAMING: Create UNIQUE, catchy, and descriptive bundle names. NEVER use generic names like "
+        "'Quick Pair Pack', 'Value Bundle', 'Combo Deal', or 'Product Bundle'. Instead, use creative themes like:\n"
+        "   - Meal/occasion themes: 'Weekend Breakfast Essentials', 'Movie Night Munchies', 'Picnic Perfect Pack'\n"
+        "   - Benefit-focused: 'Pantry Staples Starter', 'Fresh & Healthy Grab', 'Kitchen Kickstart Kit'\n"
+        "   - Fun/playful: 'Snack Attack Pack', 'Treat Yourself Bundle', 'Flavor Fiesta'\n"
+        "2. SIZE VARIETY: Create bundles with DIFFERENT sizes. Mix it up!\n"
+        "   - Some bundles with 2-3 items (quick grabs)\n"
+        "   - Some bundles with 3-4 items (value combos)\n"
+        "   - Some bundles with 4-5 items (mega deals)\n"
+        "3. COMPOSITION: Group products that make sense together (complementary items, same meal, etc.)\n"
+        "4. DESCRIPTIONS: Write engaging 1-2 sentence descriptions highlighting the value\n"
+        "5. PRIORITIZE items expiring soon (lower expires_in_days = higher priority)\n"
+        "6. AVOID zero-stock items and combinations in the exclusion list\n"
+        "7. Only use product IDs from the provided catalog\n"
+        "Output valid JSON only."
     )
     user = (
-        "Product Catalog (one per line):\n" + "\n".join(catalog_lines) + "\n\n" +
-        suggestions +
-        f"\nCreate exactly {num_bundles} bundles using the suggested combinations as JSON: {{\"bundles\":[{{\"name\":str,\"description\":str,\"product_ids\":[str,...]}}...]}}"
+        "Product Catalog (one per line - format: ID | Name | type | stock | expires_in_days | tags):\n" 
+        + "\n".join(catalog_lines) + "\n\n"
+        + suggestions
+        + f"\n\nCreate exactly {num_bundles} DIVERSE bundles with these requirements:\n"
+        + "- Each bundle MUST have a UNIQUE, creative name (no generic names!)\n"
+        + "- Vary bundle sizes: include a mix of 2, 3, 4, and 5 product bundles\n"
+        + "- Each description should explain WHY these products go together\n"
+        + "- Focus on products expiring soonest\n\n"
+        + "Return JSON: {\"bundles\":[{\"name\":str,\"description\":str,\"product_ids\":[str,...]}...]}"
     )
     data = {
         "model": model,
@@ -555,71 +633,130 @@ def generate_bundles_for_store(db, store_id: str, num_bundles: int = 3) -> list[
 
     logger.info(f"📊 Processed AI bundles, got {len(results)} valid candidates (requested: {num_bundles})")
     
-    # Top-up to reach exactly num_bundles with last-resort pairs
+    # Top-up to reach exactly num_bundles with last-resort bundles of varying sizes
     if len(results) < num_bundles:
-        logger.info(f"🔄 Need to top-up bundles: have {len(results)}, need {num_bundles}. Using fallback pair generation.")
+        logger.info(f"🔄 Need to top-up bundles: have {len(results)}, need {num_bundles}. Using creative fallback generation.")
         # Flatten pool by earliest expiry
         pool_sorted = sorted(products_raw, key=expiry_key)
-        logger.info(f"📋 Fallback pool has {len(pool_sorted)} products sorted by expiry")
-        i = 0
-        while len(results) < num_bundles and i + 1 < len(pool_sorted):
-            pr1, pr2 = pool_sorted[i], pool_sorted[i+1]
-            # skip zero stock
-            if int(pr1.get("stock") or 0) <= 0:
-                i += 1
+        # Filter out zero-stock and suspended items
+        pool_sorted = [p for p in pool_sorted if int(p.get("stock") or 0) > 0 and not bool(p.get("is_suspended"))]
+        logger.info(f"📋 Fallback pool has {len(pool_sorted)} valid products sorted by expiry")
+        
+        def to_product_in(pr):
+            exp = _safe_parse_dt(pr.get("expiresOn"))
+            if exp is None or (isinstance(exp, datetime) and exp.year < 1900):
+                exp = datetime(9999, 1, 1, tzinfo=timezone.utc)
+            return ProductIn(
+                id=str(pr.get("id")),
+                name=pr.get("name") or "Unnamed",
+                product_type=pr.get("productType") or None,
+                expires_on=exp,
+                stock=int(pr.get("stock") or 0),
+                tags=__parse_tags(pr.get("tags")),
+                price=float(pr.get("price") or 0.0),
+                original_price=float(pr.get("originalPrice") or 0.0),
+            )
+        
+        # Track which fallback names we've used to ensure variety
+        used_fallback_names = set()
+        fallback_name_index = 0
+        
+        def get_fallback_name(size: int) -> str:
+            """Get a creative fallback name for the given bundle size."""
+            nonlocal fallback_name_index
+            # First try to find a name matching the exact size
+            matching_names = [(name, s) for name, s in FALLBACK_BUNDLE_NAMES if s == size and name not in used_fallback_names]
+            if matching_names:
+                name = matching_names[0][0]
+                used_fallback_names.add(name)
+                return name
+            # Otherwise use any unused name
+            for name, s in FALLBACK_BUNDLE_NAMES:
+                if name not in used_fallback_names:
+                    used_fallback_names.add(name)
+                    return name
+            # If all names used, create a unique one with index
+            fallback_name_index += 1
+            return f"Special Bundle #{fallback_name_index}"
+        
+        def generate_description(products: list[ProductIn]) -> str:
+            """Generate an engaging description for the bundle."""
+            names = [p.name for p in products]
+            if len(names) == 2:
+                return f"A perfect pairing of {names[0]} and {names[1]} - great value together!"
+            elif len(names) == 3:
+                return f"Grab this trio featuring {names[0]}, {names[1]}, and {names[2]} for unbeatable savings!"
+            elif len(names) == 4:
+                return f"Four fantastic products bundled together: {', '.join(names[:3])}, and {names[3]}. Save big!"
+            else:
+                return f"The ultimate value pack with {len(names)} great products including {names[0]} and more!"
+        
+        # Try to create bundles of varying sizes (5, 4, 3, 2)
+        bundle_sizes = [5, 4, 3, 2]  # Try larger bundles first
+        pool_index = 0
+        
+        for target_size in bundle_sizes:
+            if len(results) >= num_bundles:
+                break
+            if pool_index + target_size > len(pool_sorted):
                 continue
-            if int(pr2.get("stock") or 0) <= 0:
-                i += 2
+                
+            # Take the next batch of products for this bundle size
+            batch = pool_sorted[pool_index:pool_index + target_size]
+            if len(batch) < target_size:
                 continue
-            # skip suspended
-            if bool(pr1.get("is_suspended")):
-                i += 1
-                continue
-            if bool(pr2.get("is_suspended")):
-                i += 2
-                continue
-            # Check if bundle with these products already exists
-            product_ids = [str(pr1.get("id")), str(pr2.get("id"))]
+                
+            product_ids = [str(p.get("id")) for p in batch]
             exists = bundle_exists_for_products(db, store_id, product_ids)
-            logger.debug(f"Fallback bundle check for products {product_ids}: exists={exists}")
             
             if exists:
-                logger.debug(f"Skipping existing fallback bundle with products {product_ids}")
-                i += 2
+                logger.debug(f"Skipping existing fallback bundle with {target_size} products")
+                pool_index += 1  # Try next starting position
                 continue
-            def to_product_in(pr):
-                exp = _safe_parse_dt(pr.get("expiresOn"))
-                if exp is None or (isinstance(exp, datetime) and exp.year < 1900):
-                    exp = datetime(9999, 1, 1, tzinfo=timezone.utc)
-                return ProductIn(
-                    id=str(pr.get("id")),
-                    name=pr.get("name") or "Unnamed",
-                    product_type=pr.get("productType") or None,
-                    expires_on=exp,
-                    stock=int(pr.get("stock") or 0),
-                    tags=__parse_tags(pr.get("tags")),
-                    price=float(pr.get("price") or 0.0),
-                    original_price=float(pr.get("originalPrice") or 0.0),
-                )
-            chosen = [to_product_in(pr1), to_product_in(pr2)]
+            
+            chosen = [to_product_in(p) for p in batch]
             stock = min([p.stock for p in chosen])
+            bundle_name = get_fallback_name(target_size)
+            
             candidate = BundleCreate(
                 store_id=store_id,
-                name="Quick Pair Pack",
-                description=f"Includes {chosen[0].name} and {chosen[1].name}.",
+                name=bundle_name,
+                description=generate_description(chosen),
                 products=chosen,
                 images=[],
                 stock=stock,
             )
-            product_ids = extract_product_ids(candidate.products)
+            
+            results.append(candidate)
+            logger.info(f"✅ Added fallback bundle '{bundle_name}' with {target_size} products ({len(results)}/{num_bundles})")
+            pool_index += target_size
+        
+        # If still need more bundles, create pairs from remaining products
+        while len(results) < num_bundles and pool_index + 1 < len(pool_sorted):
+            batch = pool_sorted[pool_index:pool_index + 2]
+            product_ids = [str(p.get("id")) for p in batch]
             exists = bundle_exists_for_products(db, store_id, product_ids)
             
-            if not exists:
-                results.append(candidate)
-                logger.info(f"✅ Added fallback bundle '{candidate.name}' ({len(results)}/{num_bundles})")
-            else:
-                logger.debug(f"Fallback bundle already exists, skipping")
-            i += 2
+            if exists:
+                pool_index += 1
+                continue
+            
+            chosen = [to_product_in(p) for p in batch]
+            stock = min([p.stock for p in chosen])
+            bundle_name = get_fallback_name(2)
+            
+            candidate = BundleCreate(
+                store_id=store_id,
+                name=bundle_name,
+                description=generate_description(chosen),
+                products=chosen,
+                images=[],
+                stock=stock,
+            )
+            
+            results.append(candidate)
+            logger.info(f"✅ Added fallback pair bundle '{bundle_name}' ({len(results)}/{num_bundles})")
+            pool_index += 2
 
     logger.info(f"🎉 Final result: returning {len(results)} bundles for store {store_id}")
     for i, result in enumerate(results):
